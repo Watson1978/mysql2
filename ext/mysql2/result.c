@@ -37,7 +37,7 @@ extern VALUE mMysql2, cMysql2Client, cMysql2Error;
 static VALUE cMysql2Result, cDateTime, cDate;
 static VALUE opt_decimal_zero, opt_float_zero, opt_time_year, opt_time_month, opt_utc_offset;
 static ID intern_new, intern_utc, intern_local, intern_localtime, intern_local_offset,
-  intern_civil, intern_new_offset, intern_merge, intern_BigDecimal;
+  intern_civil, intern_new_offset, intern_merge, intern_BigDecimal, intern_query_options;
 static VALUE sym_symbolize_keys, sym_as, sym_array, sym_database_timezone,
   sym_application_timezone, sym_local, sym_utc, sym_cast_booleans,
   sym_cache_rows, sym_cast, sym_stream, sym_name;
@@ -695,7 +695,7 @@ static VALUE rb_mysql_result_fetch_fields(VALUE self) {
 
   GET_RESULT(self);
 
-  defaults = rb_iv_get(self, "@query_options");
+  defaults = rb_ivar_get(self, intern_query_options);
   Check_Type(defaults, T_HASH);
   if (rb_hash_aref(defaults, sym_symbolize_keys) == Qtrue) {
     symbolizeKeys = 1;
@@ -763,7 +763,7 @@ static VALUE rb_mysql_result_each_(VALUE self,
       /* we've already read the entire dataset from the C result into our */
       /* internal array. Lets hand that over to the user since it's ready to go */
       for (i = 0; i < wrapper->numberOfRows; i++) {
-        rb_yield(rb_ary_entry(wrapper->rows, i));
+        rb_yield(RARRAY_AREF(wrapper->rows, i));
       }
     } else {
       unsigned long rowsProcessed = 0;
@@ -773,7 +773,7 @@ static VALUE rb_mysql_result_each_(VALUE self,
       for (i = 0; i < wrapper->numberOfRows; i++) {
         VALUE row;
         if (args->cacheRows && i < rowsProcessed) {
-          row = rb_ary_entry(wrapper->rows, i);
+          row = RARRAY_AREF(wrapper->rows, i);
         } else {
           row = fetch_row_func(self, fields, args);
           if (args->cacheRows) {
@@ -818,12 +818,17 @@ static VALUE rb_mysql_result_each(int argc, VALUE * argv, VALUE self) {
     rb_raise(cMysql2Error, "Statement handle already closed");
   }
 
-  defaults = rb_iv_get(self, "@query_options");
+  defaults = rb_ivar_get(self, intern_query_options);
   Check_Type(defaults, T_HASH);
-  if (rb_scan_args(argc, argv, "01&", &opts, &block) == 1) {
+  if (rb_scan_args(argc, argv, "01", &opts) == 1) {
     opts = rb_funcall(defaults, intern_merge, 1, opts);
   } else {
     opts = defaults;
+  }
+
+  block = Qfalse;
+  if (rb_block_given_p()) {
+    block = Qtrue;
   }
 
   symbolizeKeys = RTEST(rb_hash_aref(opts, sym_symbolize_keys));
@@ -951,7 +956,7 @@ VALUE rb_mysql_result_to_obj(VALUE client, VALUE encoding, VALUE options, MYSQL_
   }
 
   rb_obj_call_init(obj, 0, NULL);
-  rb_iv_set(obj, "@query_options", options);
+  rb_ivar_set(obj, intern_query_options, options);
 
   /* Options that cannot be changed in results.each(...) { |row| }
    * should be processed here. */
@@ -980,6 +985,7 @@ void init_mysql2_result() {
   intern_civil        = rb_intern("civil");
   intern_new_offset   = rb_intern("new_offset");
   intern_BigDecimal   = rb_intern("BigDecimal");
+  intern_query_options= rb_intern("@query_options");
 
   sym_symbolize_keys  = ID2SYM(rb_intern("symbolize_keys"));
   sym_as              = ID2SYM(rb_intern("as"));
